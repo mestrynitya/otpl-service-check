@@ -67,7 +67,9 @@ class Main(object):
       help='service name to check')
 
     self.parser.add_argument('-e', '--endpoint', default='health',
-      help='endpoint to check; default %(default)r')
+      help='healthcheck endpoint; default %(default)r')
+    self.parser.add_argument('-n', '--no-healthcheck', action='store_false',
+      dest='do_healthcheck', default=True, help='disable healthcheck')
     self.parser.add_argument('-t', '--timeout', type=float, default=5,
       help='endpoint check timeout in seconds; default %(default)s')
     self.parser.add_argument('-c', '--critical-fewer', type=int, default=1,
@@ -210,9 +212,10 @@ class Main(object):
     else:
       results.append(self.make_announcement_result(0, count))
 
-    for ann in announcements:
-      res = self.check_endpoint(ann)
-      if res is not None: results.append(res)
+    if self.args.do_healthcheck:
+      for ann in announcements:
+        res = self.check_endpoint(ann)
+        if res is not None: results.append(res)
 
     # Print worst results first and return with worst code.
     results.sort(reverse=True)
