@@ -8,7 +8,7 @@ Distribution
 
 Dependencies
 ------------
-See `requirements.txt`.
+See ``requirements.txt``.
 
 Arguments
 ---------
@@ -27,12 +27,16 @@ We log critical and warning statuses related to announcement, and return
 with exit codes 2 (``CRITICAL``) and 1 (``WARNING``)
 respectively.
 
-If your endpoint returns with status code ``2xx``, this is
-considered a success.  If it returns with ``4xx``, this is
-considered a warning (exit code 1).  ``5xx`` is considered critical
-(exit code 2).  In the latter two cases, in addition to logging the
-service status, based on the ``Content-Type`` of the response, we log a
-parsed version of the response body.
+Healthcheck Endpoint Checking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+By default, ``otpl-service-check`` checks your service for health.
+
+If your healthcheck endpoint returns with status code ``2xx``, this is
+considered a success.  If it returns with ``4xx``, this is considered a
+warning (exit code 1).  ``5xx`` is considered critical (exit code 2).
+In the latter two cases, in addition to logging the service status,
+based on the ``Content-Type`` of the response, we log a parsed version
+of the response body.
 
 - Approximately the first kilobyte of pretty-formatted ``applicaton/json`` responses will be printed.
 - ``text/html`` responses are elided; a message saying as much is printed.
@@ -52,9 +56,44 @@ This is *a bit of an abuse* of HTTP response codes, but our policy is
 that this is the simplest and most flexible way to get rich status
 responses from health check endpoints.
 
+Releasing
+---------
+Set up PyPI RC file, ``.pypirc``.  E.g.::
+
+    [distutils]
+    index-servers =
+      pypi
+      pypitest
+
+    [pypitest]
+    repository = https://testpypi.python.org/pypi
+    username = cpennello_opentable
+
+    [pypi]
+    repository = https://pypi.python.org/pypi
+    username = cpennello_opentable
+
+Suppose the version being released is ``a.b.c``.
+
+Create distributions: ``python setup.py sdist bdist_wheel``
+
+Sign distribution files::
+
+  for x in dist/*a.b.c*;do
+    gpg --detach-sign -a $x
+  done
+
+Use Twine_, uploading to the test repo first.
+``twine upload -r pypitest dist/*a.b.c*``
+
+Then to the real repo.
+``twine upload -r pypi dist/*a.b.c*``
+
 Notes
 -----
 Nagios and Sensu plugin API documentation:
 
 * `<https://assets.nagios.com/downloads/nagioscore/docs/nagioscore/3/en/pluginapi.html>`_
 * `<https://sensuapp.org/docs/latest/reference/plugins>`_
+
+.. _Twine: https://github.com/pypa/twine
