@@ -8,7 +8,7 @@ Distribution
 
 Dependencies
 ------------
-See `requirements.txt`.
+See ``requirements.txt``.
 
 Arguments
 ---------
