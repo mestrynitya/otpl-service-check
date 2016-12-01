@@ -27,12 +27,16 @@ We log critical and warning statuses related to announcement, and return
 with exit codes 2 (``CRITICAL``) and 1 (``WARNING``)
 respectively.
 
-If your endpoint returns with status code ``2xx``, this is
-considered a success.  If it returns with ``4xx``, this is
-considered a warning (exit code 1).  ``5xx`` is considered critical
-(exit code 2).  In the latter two cases, in addition to logging the
-service status, based on the ``Content-Type`` of the response, we log a
-parsed version of the response body.
+Healthcheck Endpoint Checking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+By default, ``otpl-service-check`` checks your service for health.
+
+If your healthcheck endpoint returns with status code ``2xx``, this is
+considered a success.  If it returns with ``4xx``, this is considered a
+warning (exit code 1).  ``5xx`` is considered critical (exit code 2).
+In the latter two cases, in addition to logging the service status,
+based on the ``Content-Type`` of the response, we log a parsed version
+of the response body.
 
 - Approximately the first kilobyte of pretty-formatted ``applicaton/json`` responses will be printed.
 - ``text/html`` responses are elided; a message saying as much is printed.
