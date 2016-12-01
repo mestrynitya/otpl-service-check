@@ -96,7 +96,7 @@ class Main(object):
         'warn-fewer must be at least as large as critical-fewer')
 
     self.args = args
-    
+
     # track output we've already seen and remove dupes
     self.response_data_seen = set()
 
