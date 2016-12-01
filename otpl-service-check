@@ -14,7 +14,7 @@ import requests
 discotimeout = 4 # In seconds.
 tokenkey = 'server-token'
 # NB: Version is duplicated in setup.py.
-useragent = 'otpl-service-check/1.0.5'
+useragent = 'otpl-service-check/1.1.0'
 
 Result = namedtuple('Result', ('code', 'message'))
 
@@ -67,7 +67,9 @@ class Main(object):
       help='service name to check')
 
     self.parser.add_argument('-e', '--endpoint', default='health',
-      help='endpoint to check; default %(default)r')
+      help='healthcheck endpoint; default %(default)r')
+    self.parser.add_argument('-n', '--no-healthcheck', action='store_false',
+      dest='do_healthcheck', default=True, help='disable healthcheck')
     self.parser.add_argument('-t', '--timeout', type=float, default=5,
       help='endpoint check timeout in seconds; default %(default)s')
     self.parser.add_argument('-c', '--critical-fewer', type=int, default=1,
@@ -96,7 +98,7 @@ class Main(object):
         'warn-fewer must be at least as large as critical-fewer')
 
     self.args = args
-    
+
     # track output we've already seen and remove dupes
     self.response_data_seen = set()
 
@@ -210,9 +212,10 @@ class Main(object):
     else:
       results.append(self.make_announcement_result(0, count))
 
-    for ann in announcements:
-      res = self.check_endpoint(ann)
-      if res is not None: results.append(res)
+    if self.args.do_healthcheck:
+      for ann in announcements:
+        res = self.check_endpoint(ann)
+        if res is not None: results.append(res)
 
     # Print worst results first and return with worst code.
     results.sort(reverse=True)
