@@ -56,9 +56,44 @@ This is *a bit of an abuse* of HTTP response codes, but our policy is
 that this is the simplest and most flexible way to get rich status
 responses from health check endpoints.
 
+Releasing
+---------
+Set up PyPI RC file, ``.pypirc``.  E.g.::
+
+    [distutils]
+    index-servers =
+      pypi
+      pypitest
+
+    [pypitest]
+    repository = https://testpypi.python.org/pypi
+    username = cpennello_opentable
+
+    [pypi]
+    repository = https://pypi.python.org/pypi
+    username = cpennello_opentable
+
+Suppose the version being released is ``a.b.c``.
+
+Create distributions: ``python setup.py sdist bdist_wheel``
+
+Sign distribution files::
+
+  for x in dist/*a.b.c*;do
+    gpg --detach-sign -a $x
+  done
+
+Use Twine_, uploading to the test repo first.
+``twine upload -r pypitest dist/*a.b.c*``
+
+Then to the real repo.
+``twine upload -r pypi dist/*a.b.c*``
+
 Notes
 -----
 Nagios and Sensu plugin API documentation:
 
 * `<https://assets.nagios.com/downloads/nagioscore/docs/nagioscore/3/en/pluginapi.html>`_
 * `<https://sensuapp.org/docs/latest/reference/plugins>`_
+
+.. _Twine: https://github.com/pypa/twine
