@@ -25,10 +25,11 @@ class Parser(object):
   parsers = {} # lower-case content type prefix -> parser class
   @classmethod
   def parse(cls, contenttype, text):
-    contenttype = contenttype.lower()
-    for prefix, parsercls in cls.parsers.iteritems():
-      if contenttype.startswith(prefix):
-        return parsercls().parse(text)
+    if contenttype is not None:
+      contenttype = contenttype.lower()
+      for prefix, parsercls in cls.parsers.iteritems():
+        if contenttype.startswith(prefix):
+          return parsercls().parse(text)
     return DefaultParser().parse(text)
 
 class LimitedParser(Parser):
@@ -173,7 +174,7 @@ class Main(object):
       duration = time.time() - start
       statuscode = resp.status_code
       code = statuscode // 100
-      contenttype = resp.headers['content-type']
+      contenttype = resp.headers.get('content-type')
       text = resp.text
       if code == 2:
         return self.make_response_result(
