@@ -14,7 +14,7 @@ import requests
 discotimeout = 4 # In seconds.
 tokenkey = 'server-token'
 # NB: Version is duplicated in setup.py.
-useragent = 'otpl-service-check/1.1.0'
+useragent = 'otpl-service-check/1.1.1'
 
 Result = namedtuple('Result', ('code', 'message'))
 
