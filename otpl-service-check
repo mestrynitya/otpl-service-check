@@ -115,8 +115,12 @@ class Main(object):
 
   def get_announcements(self):
     url = urljoin(self.args.discovery, 'state')
-    state = self.requestsget(url, discotimeout).json()
-    return [a for a in state if a['serviceType'] == self.args.service]
+    resp = self.requestsget(url, discotimeout)
+    if not resp.headers: backend = None
+    else: backend = resp.headers.get('X-OT-Backend') or None
+    state = resp.json()
+    ann = [a for a in state if a['serviceType'] == self.args.service]
+    return backend, ann
 
   @staticmethod
   def count_announcements(announcements):
@@ -144,9 +148,10 @@ class Main(object):
     msg = '%s\ncheck URI %s' % (message, uri)
     return cls.make_result(code, topic, msg)
 
-  def make_announcement_result(self, code, count):
+  def make_announcement_result(self, code, count, backend):
     msg = '%s\ncrit./warn thresh.: %s/%s' % (
       count, self.args.critical_fewer, self.args.warn_fewer)
+    msg += '\ndisco backend: %s' % backend
     return self.make_result(code, 'announcements', msg)
 
   def make_response_result(
@@ -196,7 +201,7 @@ class Main(object):
 
   def run(self):
     try:
-      announcements = self.get_announcements()
+      backend, announcements = self.get_announcements()
     except Exception:
       print 'failed to get announcements'
       print traceback.format_exc()
@@ -207,11 +212,11 @@ class Main(object):
 
     count = self.count_announcements(announcements)
     if count < self.args.critical_fewer:
-      results.append(self.make_announcement_result(2, count))
+      results.append(self.make_announcement_result(2, count, backend))
     elif count < self.args.warn_fewer:
-      results.append(self.make_announcement_result(1, count))
+      results.append(self.make_announcement_result(1, count, backend))
     else:
-      results.append(self.make_announcement_result(0, count))
+      results.append(self.make_announcement_result(0, count, backend))
 
     if self.args.do_healthcheck:
       for ann in announcements:
