@@ -117,7 +117,7 @@ class Main(object):
     url = urljoin(self.args.discovery, 'state')
     resp = self.requestsget(url, discotimeout)
     if not resp.headers: backend = None
-    else: backend = resp.headers.get('X-OT-Backend') or None
+    else: backend = resp.headers.get('X-OT-Backend-Task-Host') or None
     state = resp.json()
     ann = [a for a in state if a['serviceType'] == self.args.service]
     return backend, ann
