@@ -159,7 +159,8 @@ class Main(object):
     msg = '%s from endpoint' % status_code
     if code != 0:
       if text in self.response_data_seen:
-        # extra leading space on next line is important so it sorts after real results
+        # extra leading space on next line is important so it sorts
+        # after real results
         return self.make_result(code, 'health', " <duplicate '%s'>" % uri)
       msg += '\n' + Parser.parse(contenttype, text)
       self.response_data_seen.add(text)
