@@ -46,6 +46,18 @@ of the response body.
 *All* critical statuses, warnings, and successes are logged, and the
 exit status of the whole process is the worst of the set.
 
+Race Avoidance
+~~~~~~~~~~~~~~
+Pulling all announcements from Discovery and then checking each one is
+inherently racy.  If ``otpl-service-check`` finds critical errors, it
+double-checks your service's announcements.  If any of the critical
+errors are for an announcement that no longer exists, they are
+downgraded to warnings, and a further warning is emitted indicating that
+this circumstance occurred.
+
+Note that this does not avoid all race conditions, just a particular
+class of them.
+
 Endpoint Response Codes
 -----------------------
 * ``2xx``: ``0``, ``OK``
