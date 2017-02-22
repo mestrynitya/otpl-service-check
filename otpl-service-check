@@ -110,8 +110,7 @@ class Main(object):
     self.parser.exit(3, '%s: error: %s\n' % (self.parser.prog, message))
 
   def requestsget(self, url, timeout):
-      return requests.get(url, timeout=timeout,
-          headers={'User-Agent':useragent})
+    return requests.get(url, timeout=timeout, headers={'User-Agent':useragent})
 
   def get_announcements(self):
     url = urljoin(self.args.discovery, 'state')
