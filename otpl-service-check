@@ -196,6 +196,9 @@ class Main(object):
       return self.make_timeout_result(uri, 'connect')
     except requests.exceptions.ReadTimeout:
       return self.make_timeout_result(uri, 'read')
+    except requests.exceptions.ConnectionError:
+      return self.make_response_with_uri(
+        2, 'health', uri, 'connection refused')
     except requests.exceptions.RequestException:
       return self.make_response_with_uri(2, 'health',
         uri, 'unhandled exception\n' + traceback.format_exc())
