@@ -228,11 +228,41 @@ class Main(object):
         res = self.check_endpoint(ann)
         if res is not None: results.append(res)
 
-    # Print worst results first and return with worst code.
-    results.sort(reverse=True, key=lambda r: (r.code, r.message))
+    # Worst results first.
+    def sort_results():
+      results.sort(reverse=True, key=lambda r: (r.code, r.message))
+    sort_results()
+
+    if results[0].code == 2 and self.args.do_healthcheck:
+      # If we're about to page, double-check announcements.
+      try:
+        backend, announcements = self.get_announcements()
+      except Exception:
+        msg = 'failed to re-check\n' + traceback.format_exc()
+        results.append(Result(1, 'announcements', msg, None))
+      else:
+        downgraded = 0
+        for res in results:
+          if res.code != 2: break # Recall they're already sorted.
+          if res.announcement is None: continue
+          if res.announcement not in announcements:
+            # Announcement doesn't exist, so we'll mark this as only a
+            # warning.
+            res.code = 1
+            res.message += '\n(downgraded)'
+            downgraded += 1
+        if downgraded:
+          msg = 'downgraded %s critical result' % downgraded
+          if downgraded > 1: msg += 's'
+          msg += '\ndiffering disco backend: %s' % backend
+          results.append(Result(1, 'results', msg, None))
+          sort_results()
+
     for res in results:
       print res.message
       print '---'
+
+    # Return with worst code.
     return results[0].code
 
 try:
