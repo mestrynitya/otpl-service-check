@@ -14,9 +14,21 @@ import requests
 discotimeout = 4 # In seconds.
 tokenkey = 'server-token'
 # NB: Version is duplicated in setup.py.
-useragent = 'otpl-service-check/1.1.3'
+useragent = 'otpl-service-check/1.1.4'
 
-Result = namedtuple('Result', ('code', 'message'))
+class Result(object):
+  codemap = {2: 'critical', 1: 'warning', 0: 'ok'}
+
+  def __init__(self, code, topic, message, announcement):
+    self.code = code
+    state = self.codemap[code]
+    self.message = '%s %s: %s' % (topic, state, message)
+    self.announcement = announcement
+
+  @classmethod
+  def create_with_uri(cls, code, topic, uri, message, announcement):
+    message = '%s\ncheck URI %s' % (message, uri)
+    return cls(code, topic, message, announcement)
 
 # Health check endpoint response parsers.  We have different parsers for
 # different content types.  "Entry point" is Parser.parse.
@@ -110,8 +122,7 @@ class Main(object):
     self.parser.exit(3, '%s: error: %s\n' % (self.parser.prog, message))
 
   def requestsget(self, url, timeout):
-      return requests.get(url, timeout=timeout,
-          headers={'User-Agent':useragent})
+    return requests.get(url, timeout=timeout, headers={'User-Agent':useragent})
 
   def get_announcements(self):
     url = urljoin(self.args.discovery, 'state')
@@ -138,37 +149,28 @@ class Main(object):
         count += 1
     return count
 
-  @staticmethod
-  def make_result(code, topic, message):
-    state = {2: 'critical', 1: 'warning', 0: 'ok'}[code]
-    return Result(code, '%s %s: %s' % (topic, state, message))
-
-  @classmethod
-  def make_response_with_uri(cls, code, topic, uri, message):
-    msg = '%s\ncheck URI %s' % (message, uri)
-    return cls.make_result(code, topic, msg)
-
   def make_announcement_result(self, code, count, backend):
     msg = '%s\ncrit./warn thresh.: %s/%s' % (
       count, self.args.critical_fewer, self.args.warn_fewer)
     msg += '\ndisco backend: %s' % backend
-    return self.make_result(code, 'announcements', msg)
+    return Result(code, 'announcements', msg, None)
 
   def make_response_result(
-      self, code, uri, status_code, duration, contenttype, text):
+      self, code, uri, status_code, duration, contenttype, text, announcement):
     msg = '%s from endpoint' % status_code
     if code != 0:
       if text in self.response_data_seen:
-        # extra leading space on next line is important so it sorts after real results
-        return self.make_result(code, 'health', " <duplicate '%s'>" % uri)
+        # extra leading space on next line is important so it sorts
+        # after real results
+        return Result(code, 'health', " <duplicate '%s'>" % uri, announcement)
       msg += '\n' + Parser.parse(contenttype, text)
       self.response_data_seen.add(text)
     msg += '\nduration %.3fs' % duration
-    return self.make_response_with_uri(code, 'health', uri, msg)
+    return Result.create_with_uri(code, 'health', uri, msg, announcement)
 
-  def make_timeout_result(self, uri, type):
-    return self.make_response_with_uri(
-      2, '%s timeout' % type, uri, 'thresh. %.3f' % self.args.timeout)
+  def make_timeout_result(self, uri, type, announcement):
+    return Result.create_with_uri(2, '%s timeout' % type, uri,
+      'thresh. %.3f' % self.args.timeout, announcement)
 
   def check_endpoint(self, ann):
     serviceuri = ann['serviceUri']
@@ -183,21 +185,24 @@ class Main(object):
       text = resp.text
       if code == 2:
         return self.make_response_result(
-          0, uri, statuscode, duration, contenttype, text)
+          0, uri, statuscode, duration, contenttype, text, ann)
       if code == 4:
         return self.make_response_result(
-          1, uri, statuscode, duration, contenttype, text)
+          1, uri, statuscode, duration, contenttype, text, ann)
       if code == 5:
         return self.make_response_result(
-          2, uri, statuscode, duration, contenttype, text)
+          2, uri, statuscode, duration, contenttype, text, ann)
       raise Exception('unexpected status code', statuscode)
     except requests.exceptions.ConnectTimeout:
-      return self.make_timeout_result(uri, 'connect')
+      return self.make_timeout_result(uri, 'connect', ann)
     except requests.exceptions.ReadTimeout:
-      return self.make_timeout_result(uri, 'read')
+      return self.make_timeout_result(uri, 'read', ann)
+    except requests.exceptions.ConnectionError:
+      return Result.create_with_uri(2, 'health', uri,
+        'connection refused', ann)
     except requests.exceptions.RequestException:
-      return self.make_response_with_uri(2, 'health',
-        uri, 'unhandled exception\n' + traceback.format_exc())
+      return Result.create_with_uri(2, 'health', uri,
+        'unhandled exception\n' + traceback.format_exc(), ann)
 
   def run(self):
     try:
@@ -223,11 +228,41 @@ class Main(object):
         res = self.check_endpoint(ann)
         if res is not None: results.append(res)
 
-    # Print worst results first and return with worst code.
-    results.sort(reverse=True)
+    # Worst results first.
+    def sort_results():
+      results.sort(reverse=True, key=lambda r: (r.code, r.message))
+    sort_results()
+
+    if results[0].code == 2 and self.args.do_healthcheck:
+      # If we're about to page, double-check announcements.
+      try:
+        backend, announcements = self.get_announcements()
+      except Exception:
+        msg = 'failed to re-check\n' + traceback.format_exc()
+        results.append(Result(1, 'announcements', msg, None))
+      else:
+        downgraded = 0
+        for res in results:
+          if res.code != 2: break # Recall they're already sorted.
+          if res.announcement is None: continue
+          if res.announcement not in announcements:
+            # Announcement doesn't exist, so we'll mark this as only a
+            # warning.
+            res.code = 1
+            res.message += '\n(downgraded)'
+            downgraded += 1
+        if downgraded:
+          msg = 'downgraded %s critical result' % downgraded
+          if downgraded > 1: msg += 's'
+          msg += '\ndiffering disco backend: %s' % backend
+          results.append(Result(1, 'results', msg, None))
+          sort_results()
+
     for res in results:
       print res.message
       print '---'
+
+    # Return with worst code.
     return results[0].code
 
 try:
