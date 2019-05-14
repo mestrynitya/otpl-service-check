@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
+
 import json
 import sys
 import time
@@ -11,263 +13,328 @@ from urlparse import urljoin
 
 import requests
 
-discotimeout = 4 # In seconds.
-tokenkey = 'server-token'
+discotimeout = 4  # In seconds.
+tokenkey = "server-token"
 # NB: Version is duplicated in setup.py.
-useragent = 'otpl-service-check/1.1.4'
+useragent = "otpl-service-check/1.1.4"
+
 
 class Result(object):
-  codemap = {2: 'critical', 1: 'warning', 0: 'ok'}
+    codemap = {2: "critical", 1: "warning", 0: "ok"}
 
-  def __init__(self, code, topic, message, announcement):
-    self.code = code
-    state = self.codemap[code]
-    self.message = '%s %s: %s' % (topic, state, message)
-    self.announcement = announcement
+    def __init__(self, code, topic, message, announcement):
+        self.code = code
+        state = self.codemap[code]
+        self.message = "%s %s: %s" % (topic, state, message)
+        self.announcement = announcement
 
-  @classmethod
-  def create_with_uri(cls, code, topic, uri, message, announcement):
-    message = '%s\ncheck URI %s' % (message, uri)
-    return cls(code, topic, message, announcement)
+    @classmethod
+    def create_with_uri(cls, code, topic, uri, message, announcement):
+        message = "%s\ncheck URI %s" % (message, uri)
+        return cls(code, topic, message, announcement)
+
 
 # Health check endpoint response parsers.  We have different parsers for
 # different content types.  "Entry point" is Parser.parse.
 
+
 class Parser(object):
-  parsers = {} # lower-case content type prefix -> parser class
-  @classmethod
-  def parse(cls, contenttype, text):
-    if contenttype is not None:
-      contenttype = contenttype.lower()
-      for prefix, parsercls in cls.parsers.iteritems():
-        if contenttype.startswith(prefix):
-          return parsercls().parse(text)
-    return DefaultParser().parse(text)
+    parsers = {}  # lower-case content type prefix -> parser class
+
+    @classmethod
+    def parse(cls, contenttype, text):
+        if contenttype is not None:
+            contenttype = contenttype.lower()
+            for prefix, parsercls in cls.parsers.iteritems():
+                if contenttype.startswith(prefix):
+                    return parsercls().parse(text)
+        return DefaultParser().parse(text)
+
 
 class LimitedParser(Parser):
-  def __init__(self, limit=128): self.limit = limit
-  def parse(self, text):
-    if len(text) > self.limit:
-      text = text[:self.limit] + '...'
-    return text
-Parser.parsers['text/plain'] = LimitedParser
+    def __init__(self, limit=128):
+        self.limit = limit
+
+    def parse(self, text):
+        if len(text) > self.limit:
+            text = text[: self.limit] + "..."
+        return text
+
+
+Parser.parsers["text/plain"] = LimitedParser
+
 
 class HtmlParser(Parser):
-  def parse(self, text): return 'html response elided'
-Parser.parsers['text/html'] = HtmlParser
+    def parse(self, text):
+        return "html response elided"
+
+
+Parser.parsers["text/html"] = HtmlParser
+
 
 class JsonParser(Parser):
-  limit = 1024
-  def parse(self, text):
-    try: data = json.loads(text)
-    except ValueError: return DefaultParser().parse(text)
-    pretty = json.dumps(data, indent=2)
-    return LimitedParser(self.limit).parse(pretty)
-Parser.parsers['application/json'] = JsonParser
+    limit = 1024
+
+    def parse(self, text):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return DefaultParser().parse(text)
+        pretty = json.dumps(data, indent=2)
+        return LimitedParser(self.limit).parse(pretty)
+
+
+Parser.parsers["application/json"] = JsonParser
 
 DefaultParser = LimitedParser
 
+
 class Main(object):
-  # Parse arguments.
-  def __init__(self):
-    self.parser = ArgumentParser(
-      description='Check Discovery service for health.')
+    # Parse arguments.
+    def __init__(self):
+        self.parser = ArgumentParser(description="Check Discovery service for health.")
 
-    # These first two are actually required.  See below.
-    self.parser.add_argument('-d', '--discovery', default=None,
-      help='discovery server URL')
-    self.parser.add_argument('-s', '--service', default=None,
-      help='service name to check')
+        # These first two are actually required.  See below.
+        self.parser.add_argument(
+            "-d", "--discovery", default=None, help="discovery server URL"
+        )
+        self.parser.add_argument(
+            "-s", "--service", default=None, help="service name to check"
+        )
 
-    self.parser.add_argument('-e', '--endpoint', default='health',
-      help='healthcheck endpoint; default %(default)r')
-    self.parser.add_argument('-n', '--no-healthcheck', action='store_false',
-      dest='do_healthcheck', default=True, help='disable healthcheck')
-    self.parser.add_argument('-t', '--timeout', type=float, default=5,
-      help='endpoint check timeout in seconds; default %(default)s')
-    self.parser.add_argument('-c', '--critical-fewer', type=int, default=1,
-      help='minimum instances before critical; default %(default)s; '
-      'set to 0 to disable')
-    self.parser.add_argument('-w', '--warn-fewer', type=int, default=1,
-      help='minimum instances before warning; default %(default)s; '
-      'set to 0 to disable')
-    args = self.parser.parse_args()
+        self.parser.add_argument(
+            "-e",
+            "--endpoint",
+            default="health",
+            help="healthcheck endpoint; default %(default)r",
+        )
+        self.parser.add_argument(
+            "-n",
+            "--no-healthcheck",
+            action="store_false",
+            dest="do_healthcheck",
+            default=True,
+            help="disable healthcheck",
+        )
+        self.parser.add_argument(
+            "-t",
+            "--timeout",
+            type=float,
+            default=5,
+            help="endpoint check timeout in seconds; default %(default)s",
+        )
+        self.parser.add_argument(
+            "-c",
+            "--critical-fewer",
+            type=int,
+            default=1,
+            help="minimum instances before critical; default %(default)s; "
+            "set to 0 to disable",
+        )
+        self.parser.add_argument(
+            "-w",
+            "--warn-fewer",
+            type=int,
+            default=1,
+            help="minimum instances before warning; default %(default)s; "
+            "set to 0 to disable",
+        )
+        args = self.parser.parse_args()
 
-    # We do this manually here since the argparse default is to exit
-    # with code 2.  See parser_error.
-    if args.discovery is None:
-      self.parser_error('argument -d/--discovery is required')
-    if args.service is None:
-      self.parser_error('argument -s/--service is required')
+        # We do this manually here since the argparse default is to exit
+        # with code 2.  See parser_error.
+        if args.discovery is None:
+            self.parser_error("argument -d/--discovery is required")
+        if args.service is None:
+            self.parser_error("argument -s/--service is required")
 
-    if args.timeout <= 0:
-      self.parser_error('timeout must be positive')
-    if args.critical_fewer < 0:
-      self.parser_error('critical-fewer must be non-negative')
-    if args.warn_fewer < 0:
-      self.parser_error('warn-fewer must be non-negative')
-    if args.warn_fewer < args.critical_fewer:
-      self.parser_error(
-        'warn-fewer must be at least as large as critical-fewer')
+        if args.timeout <= 0:
+            self.parser_error("timeout must be positive")
+        if args.critical_fewer < 0:
+            self.parser_error("critical-fewer must be non-negative")
+        if args.warn_fewer < 0:
+            self.parser_error("warn-fewer must be non-negative")
+        if args.warn_fewer < args.critical_fewer:
+            self.parser_error("warn-fewer must be at least as large as critical-fewer")
 
-    self.args = args
+        self.args = args
 
-    # track output we've already seen and remove dupes
-    self.response_data_seen = set()
+        # track output we've already seen and remove dupes
+        self.response_data_seen = set()
 
-  def parser_error(self, message):
-    # Code 3 is "UNKNOWN".  (argparse default is 2, which would be
-    # "CRITICAL"--inappropriate.)
-    self.parser.print_usage()
-    self.parser.exit(3, '%s: error: %s\n' % (self.parser.prog, message))
+    def parser_error(self, message):
+        # Code 3 is "UNKNOWN".  (argparse default is 2, which would be
+        # "CRITICAL"--inappropriate.)
+        self.parser.print_usage()
+        self.parser.exit(3, "%s: error: %s\n" % (self.parser.prog, message))
 
-  def requestsget(self, url, timeout):
-    return requests.get(url, timeout=timeout, headers={'User-Agent':useragent})
+    def requestsget(self, url, timeout):
+        return requests.get(url, timeout=timeout, headers={"User-Agent": useragent})
 
-  def get_announcements(self):
-    url = urljoin(self.args.discovery, 'state')
-    resp = self.requestsget(url, discotimeout)
-    if not resp.headers: backend = None
-    else: backend = resp.headers.get('X-OT-Backend-Task-Host') or None
-    state = resp.json()
-    ann = [a for a in state if a['serviceType'] == self.args.service]
-    return backend, ann
+    def get_announcements(self):
+        url = urljoin(self.args.discovery, "state")
+        resp = self.requestsget(url, discotimeout)
+        if not resp.headers:
+            backend = None
+        else:
+            backend = resp.headers.get("X-OT-Backend-Task-Host") or None
+        state = resp.json()
+        ann = [a for a in state if a["serviceType"] == self.args.service]
+        return backend, ann
 
-  @staticmethod
-  def count_announcements(announcements):
-    seen = set()
-    count = 0
-    for ann in announcements:
-      metadata = ann.get('metadata', {})
-      if tokenkey not in metadata:
-        # No token; this is ok.
-        count += 1
-        continue
-      token = metadata[tokenkey]
-      if token not in seen:
-        seen.add(token)
-        count += 1
-    return count
+    @staticmethod
+    def count_announcements(announcements):
+        seen = set()
+        count = 0
+        for ann in announcements:
+            metadata = ann.get("metadata", {})
+            if tokenkey not in metadata:
+                # No token; this is ok.
+                count += 1
+                continue
+            token = metadata[tokenkey]
+            if token not in seen:
+                seen.add(token)
+                count += 1
+        return count
 
-  def make_announcement_result(self, code, count, backend):
-    msg = '%s\ncrit./warn thresh.: %s/%s' % (
-      count, self.args.critical_fewer, self.args.warn_fewer)
-    msg += '\ndisco backend: %s' % backend
-    return Result(code, 'announcements', msg, None)
+    def make_announcement_result(self, code, count, backend):
+        msg = "%s\ncrit./warn thresh.: %s/%s" % (
+            count,
+            self.args.critical_fewer,
+            self.args.warn_fewer,
+        )
+        msg += "\ndisco backend: %s" % backend
+        return Result(code, "announcements", msg, None)
 
-  def make_response_result(
-      self, code, uri, status_code, duration, contenttype, text, announcement):
-    msg = '%s from endpoint' % status_code
-    if code != 0:
-      if text in self.response_data_seen:
-        # extra leading space on next line is important so it sorts
-        # after real results
-        return Result(code, 'health', " <duplicate '%s'>" % uri, announcement)
-      msg += '\n' + Parser.parse(contenttype, text)
-      self.response_data_seen.add(text)
-    msg += '\nduration %.3fs' % duration
-    return Result.create_with_uri(code, 'health', uri, msg, announcement)
+    def make_response_result(
+        self, code, uri, status_code, duration, contenttype, text, announcement
+    ):
+        msg = "%s from endpoint" % status_code
+        if code != 0:
+            if text in self.response_data_seen:
+                # extra leading space on next line is important so it sorts
+                # after real results
+                return Result(code, "health", " <duplicate '%s'>" % uri, announcement)
+            msg += "\n" + Parser.parse(contenttype, text)
+            self.response_data_seen.add(text)
+        msg += "\nduration %.3fs" % duration
+        return Result.create_with_uri(code, "health", uri, msg, announcement)
 
-  def make_timeout_result(self, uri, type, announcement):
-    return Result.create_with_uri(2, '%s timeout' % type, uri,
-      'thresh. %.3f' % self.args.timeout, announcement)
+    def make_timeout_result(self, uri, type, announcement):
+        return Result.create_with_uri(
+            2,
+            "%s timeout" % type,
+            uri,
+            "thresh. %.3f" % self.args.timeout,
+            announcement,
+        )
 
-  def check_endpoint(self, ann):
-    serviceuri = ann['serviceUri']
-    uri = urljoin(serviceuri, self.args.endpoint)
-    start = time.time()
-    try:
-      resp = self.requestsget(uri, self.args.timeout)
-      duration = time.time() - start
-      statuscode = resp.status_code
-      code = statuscode // 100
-      contenttype = resp.headers.get('content-type')
-      text = resp.text
-      if code == 2:
-        return self.make_response_result(
-          0, uri, statuscode, duration, contenttype, text, ann)
-      if code == 4:
-        return self.make_response_result(
-          1, uri, statuscode, duration, contenttype, text, ann)
-      if code == 5:
-        return self.make_response_result(
-          2, uri, statuscode, duration, contenttype, text, ann)
-      raise Exception('unexpected status code', statuscode)
-    except requests.exceptions.ConnectTimeout:
-      return self.make_timeout_result(uri, 'connect', ann)
-    except requests.exceptions.ReadTimeout:
-      return self.make_timeout_result(uri, 'read', ann)
-    except requests.exceptions.ConnectionError:
-      return Result.create_with_uri(2, 'health', uri,
-        'connection refused', ann)
-    except requests.exceptions.RequestException:
-      return Result.create_with_uri(2, 'health', uri,
-        'unhandled exception\n' + traceback.format_exc(), ann)
+    def check_endpoint(self, ann):
+        serviceuri = ann["serviceUri"]
+        uri = urljoin(serviceuri, self.args.endpoint)
+        start = time.time()
+        try:
+            resp = self.requestsget(uri, self.args.timeout)
+            duration = time.time() - start
+            statuscode = resp.status_code
+            code = statuscode // 100
+            contenttype = resp.headers.get("content-type")
+            text = resp.text
+            if code == 2:
+                return self.make_response_result(
+                    0, uri, statuscode, duration, contenttype, text, ann
+                )
+            if code == 4:
+                return self.make_response_result(
+                    1, uri, statuscode, duration, contenttype, text, ann
+                )
+            if code == 5:
+                return self.make_response_result(
+                    2, uri, statuscode, duration, contenttype, text, ann
+                )
+            raise Exception("unexpected status code", statuscode)
+        except requests.exceptions.ConnectTimeout:
+            return self.make_timeout_result(uri, "connect", ann)
+        except requests.exceptions.ReadTimeout:
+            return self.make_timeout_result(uri, "read", ann)
+        except requests.exceptions.ConnectionError:
+            return Result.create_with_uri(2, "health", uri, "connection refused", ann)
+        except requests.exceptions.RequestException:
+            return Result.create_with_uri(
+                2, "health", uri, "unhandled exception\n" + traceback.format_exc(), ann
+            )
 
-  def run(self):
-    try:
-      backend, announcements = self.get_announcements()
-    except Exception:
-      print 'failed to get announcements'
-      print traceback.format_exc()
-      return 3
+    def run(self):
+        try:
+            backend, announcements = self.get_announcements()
+        except Exception:
+            print("failed to get announcements")
+            print(traceback.format_exc())
+            return 3
 
-    # Will contain Result instances.
-    results = []
+        # Will contain Result instances.
+        results = []
 
-    count = self.count_announcements(announcements)
-    if count < self.args.critical_fewer:
-      results.append(self.make_announcement_result(2, count, backend))
-    elif count < self.args.warn_fewer:
-      results.append(self.make_announcement_result(1, count, backend))
-    else:
-      results.append(self.make_announcement_result(0, count, backend))
+        count = self.count_announcements(announcements)
+        if count < self.args.critical_fewer:
+            results.append(self.make_announcement_result(2, count, backend))
+        elif count < self.args.warn_fewer:
+            results.append(self.make_announcement_result(1, count, backend))
+        else:
+            results.append(self.make_announcement_result(0, count, backend))
 
-    if self.args.do_healthcheck:
-      for ann in announcements:
-        res = self.check_endpoint(ann)
-        if res is not None: results.append(res)
+        if self.args.do_healthcheck:
+            for ann in announcements:
+                res = self.check_endpoint(ann)
+                if res is not None:
+                    results.append(res)
 
-    # Worst results first.
-    def sort_results():
-      results.sort(reverse=True, key=lambda r: (r.code, r.message))
-    sort_results()
+        # Worst results first.
+        def sort_results():
+            results.sort(reverse=True, key=lambda r: (r.code, r.message))
 
-    if results[0].code == 2 and self.args.do_healthcheck:
-      # If we're about to page, double-check announcements.
-      try:
-        backend, announcements = self.get_announcements()
-      except Exception:
-        msg = 'failed to re-check\n' + traceback.format_exc()
-        results.append(Result(1, 'announcements', msg, None))
-      else:
-        downgraded = 0
+        sort_results()
+
+        if results[0].code == 2 and self.args.do_healthcheck:
+            # If we're about to page, double-check announcements.
+            try:
+                backend, announcements = self.get_announcements()
+            except Exception:
+                msg = "failed to re-check\n" + traceback.format_exc()
+                results.append(Result(1, "announcements", msg, None))
+            else:
+                downgraded = 0
+                for res in results:
+                    if res.code != 2:
+                        break  # Recall they're already sorted.
+                    if res.announcement is None:
+                        continue
+                    if res.announcement not in announcements:
+                        # Announcement doesn't exist, so we'll mark this as only a
+                        # warning.
+                        res.code = 1
+                        res.message += "\n(downgraded)"
+                        downgraded += 1
+                if downgraded:
+                    msg = "downgraded %s critical result" % downgraded
+                    if downgraded > 1:
+                        msg += "s"
+                    msg += "\ndiffering disco backend: %s" % backend
+                    results.append(Result(1, "results", msg, None))
+                    sort_results()
+
         for res in results:
-          if res.code != 2: break # Recall they're already sorted.
-          if res.announcement is None: continue
-          if res.announcement not in announcements:
-            # Announcement doesn't exist, so we'll mark this as only a
-            # warning.
-            res.code = 1
-            res.message += '\n(downgraded)'
-            downgraded += 1
-        if downgraded:
-          msg = 'downgraded %s critical result' % downgraded
-          if downgraded > 1: msg += 's'
-          msg += '\ndiffering disco backend: %s' % backend
-          results.append(Result(1, 'results', msg, None))
-          sort_results()
+            print(res.message)
+            print("---")
 
-    for res in results:
-      print res.message
-      print '---'
+        # Return with worst code.
+        return results[0].code
 
-    # Return with worst code.
-    return results[0].code
 
 try:
-  sys.exit(Main().run())
+    sys.exit(Main().run())
 except Exception:
-  print 'unhandled exception'
-  print traceback.format_exc()
-  sys.exit(3)
+    print("unhandled exception")
+    print(traceback.format_exc())
+    sys.exit(3)
