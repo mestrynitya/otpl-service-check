@@ -7,9 +7,14 @@ import sys
 import time
 import traceback
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 from collections import namedtuple
-from urlparse import urljoin
+
+# Python 2/3 Compat
+try:
+    from urllib.parse import urljoin
+except:
+    from urlparse import urljoin
 
 import requests
 
@@ -89,6 +94,14 @@ Parser.parsers["application/json"] = JsonParser
 DefaultParser = LimitedParser
 
 
+def http_header(val):
+    if ":" not in val:
+        raise ArgumentTypeError("invalid header format: {}".format(val))
+
+    name, value = val.split(":", 1)
+    return (name.strip(), value.lstrip())
+
+
 class Main(object):
     # Parse arguments.
     def __init__(self):
@@ -139,6 +152,13 @@ class Main(object):
             help="minimum instances before warning; default %(default)s; "
             "set to 0 to disable",
         )
+        self.parser.add_argument(
+            "-H",
+            "--header",
+            type=http_header,
+            action="append",
+            help="HTTP header to pass to service",
+        )
         args = self.parser.parse_args()
 
         # We do this manually here since the argparse default is to exit
@@ -157,6 +177,11 @@ class Main(object):
         if args.warn_fewer < args.critical_fewer:
             self.parser_error("warn-fewer must be at least as large as critical-fewer")
 
+        if args.header:
+            self.service_headers = dict(args.header)
+        else:
+            self.service_headers = {}
+
         self.args = args
 
         # track output we've already seen and remove dupes
@@ -168,8 +193,11 @@ class Main(object):
         self.parser.print_usage()
         self.parser.exit(3, "%s: error: %s\n" % (self.parser.prog, message))
 
-    def requestsget(self, url, timeout):
-        return requests.get(url, timeout=timeout, headers={"User-Agent": useragent})
+    def requestsget(self, url, timeout, extra_headers=None):
+        headers = {"User-Agent": useragent}
+        if extra_headers is not None:
+            headers.update(extra_headers)
+        return requests.get(url, timeout=timeout, headers=headers)
 
     def get_announcements(self):
         url = urljoin(self.args.discovery, "state")
@@ -235,7 +263,7 @@ class Main(object):
         uri = urljoin(serviceuri, self.args.endpoint)
         start = time.time()
         try:
-            resp = self.requestsget(uri, self.args.timeout)
+            resp = self.requestsget(uri, self.args.timeout, self.service_headers)
             duration = time.time() - start
             statuscode = resp.status_code
             code = statuscode // 100
