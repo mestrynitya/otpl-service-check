@@ -74,16 +74,11 @@ Set up PyPI RC file, ``.pypirc``.  E.g.::
 
     [distutils]
     index-servers =
-      pypi
-      pypitest
+      artifactory
 
-    [pypitest]
-    repository = https://testpypi.python.org/pypi
-    username = cpennello_opentable
+    [arti]
+    repository = http://artifactory.otenv.com:8081/artifactory/api/pypi/pypi-local
 
-    [pypi]
-    repository = https://pypi.python.org/pypi
-    username = cpennello_opentable
 
 Suppose the version being released is ``a.b.c``.
 
@@ -95,11 +90,8 @@ Sign distribution files::
     gpg --detach-sign -a $x
   done
 
-Use Twine_, uploading to the test repo first.
-``twine upload -r pypitest dist/*a.b.c*``
-
-Then to the real repo.
-``twine upload -r pypi dist/*a.b.c*``
+Use Twine_, uploading to artifactory.
+``twine upload -r artifactory dist/*a.b.c*``
 
 Notes
 -----
