@@ -6,6 +6,7 @@ import json
 import sys
 import time
 import traceback
+import multiprocessing
 
 from argparse import ArgumentParser, ArgumentTypeError
 from collections import namedtuple
@@ -313,8 +314,11 @@ class Main(object):
             results.append(self.make_announcement_result(0, count, backend))
 
         if self.args.do_healthcheck:
-            for ann in announcements:
-                res = self.check_endpoint(ann)
+            pool = multiprocessing.Pool(16)
+            results = pool.imap_unordered(self.check_endpoint, announcements)
+            pool.close()
+            pool.join()
+            for res in results:
                 if res is not None:
                     results.append(res)
 
