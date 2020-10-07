@@ -6,6 +6,7 @@ import json
 import sys
 import time
 import traceback
+import multiprocessing
 
 from argparse import ArgumentParser, ArgumentTypeError
 from collections import namedtuple
@@ -37,6 +38,64 @@ class Result(object):
     def create_with_uri(cls, code, topic, uri, message, announcement):
         message = "%s\ncheck URI %s" % (message, uri)
         return cls(code, topic, message, announcement)
+
+
+class Response(object):
+    def __init__(
+        self,
+        status=None,
+        body=None,
+        duration=None,
+        uri=None,
+        content_type=None,
+        announcement=None,
+        exc=None,
+        tb=None,
+    ):
+        self.status = status
+        self.body = body
+        self.duration = duration
+        self.uri = uri
+        self.content_type = content_type
+        self.announcement = announcement
+        self.exc = exc
+        self.tb = tb
+
+
+class EndpointChecker(object):
+    def __init__(self, endpoint, timeout, headers=None):
+        self.endpoint = endpoint
+        self.timeout = timeout
+        self.headers = headers or {}
+
+    def check_endpoint(self, ann):
+        serviceuri = ann["serviceUri"]
+        uri = urljoin(serviceuri, self.endpoint)
+        start = time.time()
+        try:
+            headers = {"User-Agent": useragent}
+            if self.headers:
+                headers.update(self.headers)
+
+            start = time.time()
+            resp = requests.get(uri, timeout=self.timeout, headers=headers)
+            stop = time.time()
+
+            return Response(
+                status=resp.status_code,
+                body=resp.text,
+                duration=stop - start,
+                uri=uri,
+                content_type=resp.headers.get("content-type"),
+                announcement=ann,
+            )
+        except Exception as e:
+            return Response(
+                uri=uri,
+                announcement=ann,
+                exc=e,
+                tb=traceback.format_exc(),
+            )
 
 
 # Health check endpoint response parsers.  We have different parsers for
@@ -258,40 +317,43 @@ class Main(object):
             announcement,
         )
 
-    def check_endpoint(self, ann):
-        serviceuri = ann["serviceUri"]
-        uri = urljoin(serviceuri, self.args.endpoint)
-        start = time.time()
-        try:
-            resp = self.requestsget(uri, self.args.timeout, self.service_headers)
-            duration = time.time() - start
-            statuscode = resp.status_code
-            code = statuscode // 100
-            contenttype = resp.headers.get("content-type")
-            text = resp.text
-            if code == 2:
-                return self.make_response_result(
-                    0, uri, statuscode, duration, contenttype, text, ann
+    def handle_response(self, response):
+        if response.exc is not None:
+            if isinstance(response.exc, requests.exceptions.ConnectTimeout):
+                return self.make_timeout_result(
+                    response.uri, "connect", response.announcement
                 )
-            if code == 4:
-                return self.make_response_result(
-                    1, uri, statuscode, duration, contenttype, text, ann
+            if isinstance(response.exc, requests.exceptions.ReadTimeout):
+                return self.make_timeout_result(
+                    response.uri, "read", response.announcement
                 )
-            if code == 5:
-                return self.make_response_result(
-                    2, uri, statuscode, duration, contenttype, text, ann
+            if isinstance(response.exc, requests.exceptions.ConnectionError):
+                return Result.create_with_uri(
+                    2,
+                    "health",
+                    response.uri,
+                    "connection refused",
+                    response.announcement,
                 )
-            raise Exception("unexpected status code", statuscode)
-        except requests.exceptions.ConnectTimeout:
-            return self.make_timeout_result(uri, "connect", ann)
-        except requests.exceptions.ReadTimeout:
-            return self.make_timeout_result(uri, "read", ann)
-        except requests.exceptions.ConnectionError:
-            return Result.create_with_uri(2, "health", uri, "connection refused", ann)
-        except requests.exceptions.RequestException:
             return Result.create_with_uri(
-                2, "health", uri, "unhandled exception\n" + traceback.format_exc(), ann
+                2,
+                "health",
+                response.uri,
+                "unhandled exception\n" + response.tb,
+                response.announcement,
             )
+
+        code = response.status // 100
+        result = 0 if code == 2 else 1 if code == 4 else 2
+        return self.make_response_result(
+            result,
+            response.uri,
+            response.status,
+            response.duration,
+            response.content_type,
+            response.body,
+            response.announcement,
+        )
 
     def run(self):
         try:
@@ -313,10 +375,18 @@ class Main(object):
             results.append(self.make_announcement_result(0, count, backend))
 
         if self.args.do_healthcheck:
-            for ann in announcements:
-                res = self.check_endpoint(ann)
-                if res is not None:
-                    results.append(res)
+            ec = EndpointChecker(
+                self.args.endpoint, self.args.timeout, self.service_headers
+            )
+
+            pool = multiprocessing.Pool(16)
+            checks = pool.imap_unordered(ec.check_endpoint, announcements)
+            pool.close()
+            pool.join()
+            for chk in checks:
+                r = self.handle_response(chk)
+                if r is not None:
+                    results.append(r)
 
         # Worst results first.
         def sort_results():
@@ -360,9 +430,10 @@ class Main(object):
         return results[0].code
 
 
-try:
-    sys.exit(Main().run())
-except Exception:
-    print("unhandled exception")
-    print(traceback.format_exc())
-    sys.exit(3)
+if __name__ == "__main__":
+    try:
+        sys.exit(Main().run())
+    except Exception:
+        print("unhandled exception")
+        print(traceback.format_exc())
+        sys.exit(3)
