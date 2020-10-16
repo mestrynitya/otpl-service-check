@@ -9,7 +9,7 @@ setup(
     name="otpl-service-check",
     description="A selection of Nagios plugins to monitor services hosted in OpenTable Mesos.",
     long_description=open('README.rst').read(),
-    version="1.1.5", # NB: Version is duplicated in otpl-service-check.
+    version="1.1.6", # NB: Version is duplicated in otpl-service-check.
     packages=find_packages(),
     author='OpenTable Architecture Team',
     author_email='archteam@opentable.onmicrosoft.com',
