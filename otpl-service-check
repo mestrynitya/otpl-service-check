@@ -109,7 +109,7 @@ class Parser(object):
     def parse(cls, contenttype, text):
         if contenttype is not None:
             contenttype = contenttype.lower()
-            for prefix, parsercls in cls.parsers.iteritems():
+            for prefix, parsercls in cls.parsers.items():
                 if contenttype.startswith(prefix):
                     return parsercls().parse(text)
         return DefaultParser().parse(text)
